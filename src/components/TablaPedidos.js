@@ -23,26 +23,27 @@ const TablaPedidos = () => {
   });
   const [editandoId, setEditandoId] = useState(null);
   const [comision, setComision] = useState(0);
+  const [impuestosImportacion, setImpuestosImportacion] = useState(0);
+  const [abono, setAbono] = useState(0);
+  const [envio, setEnvio] = useState(0);
   const [columnFilters, setColumnFilters] = useState([]);
   const apiUrl = process.env.REACT_APP_API_URL;
 
-
   const fetchPedidos = useCallback(async () => {
-  const res = await fetch(`${apiUrl}/pedidos`);
-  const data = await res.json();
+    const res = await fetch(`${apiUrl}/pedidos`);
+    const data = await res.json();
 
-  const pedidosNormalizados = data.map((p) => ({
-    ...p,
-    costo: parseFloat(p.costo) || 0,
-  }));
+    const pedidosNormalizados = data.map((p) => ({
+      ...p,
+      costo: parseFloat(p.costo) || 0,
+    }));
 
-  setPedidos(pedidosNormalizados);
-}, [apiUrl]);
+    setPedidos(pedidosNormalizados);
+  }, [apiUrl]);
 
-useEffect(() => {
-  fetchPedidos();
-}, [fetchPedidos]);
-
+  useEffect(() => {
+    fetchPedidos();
+  }, [fetchPedidos]);
 
   const handleChange = (e) => {
     setNuevoPedido({ ...nuevoPedido, [e.target.name]: e.target.value });
@@ -85,12 +86,11 @@ useEffect(() => {
     { accessorKey: 'tienda', header: 'Tienda' },
     { accessorKey: 'descripcion', header: 'Descripción' },
     { accessorKey: 'estado', header: 'Estado' },
-    { 
+    {
       accessorKey: 'costo',
-    header: 'Costo',
-    // 👇 aquí se aplica el formato con símbolo de $
-    cell: ({ getValue }) => `$${parseFloat(getValue()).toFixed(2)}`
-     },
+      header: 'Costo',
+      cell: ({ getValue }) => `$${parseFloat(getValue()).toFixed(2)}`
+    },
     {
       id: 'acciones',
       header: 'Acciones',
@@ -119,14 +119,61 @@ useEffect(() => {
   });
 
   const filteredRows = table.getRowModel().rows;
-  
+
   const totalCostoFiltrado = useMemo(() => {
     return filteredRows.reduce((sum, row) => sum + (Number(row.original.costo) || 0), 0);
   }, [filteredRows]);
 
-  const totalConComision = useMemo(() => {
-    return totalCostoFiltrado + (Number(comision) || 0);
-  }, [totalCostoFiltrado, comision]);
+  const totalConComisionEImpuestos = useMemo(() => {
+    return totalCostoFiltrado + (Number(comision) || 0) + (Number(impuestosImportacion) || 0) + (Number(envio) || 0);
+  }, [totalCostoFiltrado, comision, impuestosImportacion, envio]);
+
+  const totalFinal = useMemo(() => {
+    return totalConComisionEImpuestos - (Number(abono) || 0);
+  }, [totalConComisionEImpuestos, abono]);
+
+  const generarTicket = () => {
+    const fecha = new Date().toLocaleDateString();
+    const hora = new Date().toLocaleTimeString();
+
+    let ticketContent = `
+*🏷️ TICKET DE COMPRA 🏷️*
+*📅 Fecha:* ${fecha} ⏰ ${hora}
+
+*📦 ARTÍCULOS:*
+${filteredRows.map((row, index) =>
+      `${index + 1}. ${row.original.descripcion || 'Artículo sin descripción'} 
+   → Tienda: ${row.original.tienda || 'Sin tienda'} 
+   → Costo: $${parseFloat(row.original.costo).toFixed(2)}`
+    ).join('\n\n')}
+
+*💰 TOTALES:*
+➖ Subtotal: $${totalCostoFiltrado.toFixed(2)}
+➕ Comisión: $${comision.toFixed(2)}
+➕ Impuestos: $${impuestosImportacion.toFixed(2)}
+${envio > 0 ? `➕ Envío: $${envio.toFixed(2)}` : '➕ Envío: GRATIS'}
+➖ Abono: $${abono.toFixed(2)}
+━━━━━━━━━━━━━━━━━━
+💵 *TOTAL FINAL: $${totalFinal.toFixed(2)}*
+
+*📲 Datos de contacto:*
+📧 Email: 
+  romeromaciasorlando@gmail.com
+  nayegonza0130@gmail.com
+📞 Teléfono: 
+  +56 3878 3228
+  +241 279 0692
+
+  Mi cuenta BBVA: 
+Cuenta CLABE: 012 180 01523123878 0
+
+¡Gracias por su preferencia! 🎉`;
+
+    const encodedContent = encodeURIComponent(ticketContent);
+    const whatsappUrl = `https://wa.me/?text=${encodedContent}`;
+
+    window.open(whatsappUrl, '_blank');
+  };
 
   return (
     <div className="p-4">
@@ -200,16 +247,16 @@ useEffect(() => {
           Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount()}
         </div>
         <div className="flex gap-2">
-          <button 
-            onClick={() => table.previousPage()} 
-            disabled={!table.getCanPreviousPage()} 
+          <button
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
             className="px-3 py-1 bg-gray-200 rounded"
           >
             Anterior
           </button>
-          <button 
-            onClick={() => table.nextPage()} 
-            disabled={!table.getCanNextPage()} 
+          <button
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
             className="px-3 py-1 bg-gray-200 rounded"
           >
             Siguiente
@@ -219,22 +266,76 @@ useEffect(() => {
 
       <div className="mt-4 p-4 bg-gray-100 rounded shadow-md max-w-md">
         <div className="flex justify-between items-center mb-2">
-          <label className="font-semibold">Total:</label>
+          <label className="font-semibold">Subtotal:</label>
           <span>${totalCostoFiltrado.toFixed(2)}</span>
         </div>
         <div className="flex justify-between items-center mb-2">
           <label className="font-semibold">Comisión:</label>
-          <input
-            type="number"
-            value={comision}
-            onChange={(e) => setComision(Number(e.target.value) || 0)}
-            className="border rounded p-1 w-24 text-right"
-          />
+          <div className="flex items-center">
+            <span className="mr-1">$</span>
+            <input
+              type="number"
+              value={comision}
+              onChange={(e) => setComision(Number(e.target.value) || 0)}
+              className="border rounded p-1 w-24 text-right"
+            />
+          </div>
         </div>
-        <div className="flex justify-between items-center">
-          <label className="font-semibold">Total + Comisión:</label>
-          <span>${totalConComision.toFixed(2)}</span>
+        <div className="flex justify-between items-center mb-2">
+          <label className="font-semibold">Impuestos de importación:</label>
+          <div className="flex items-center">
+            <span className="mr-1">$</span>
+            <input
+              type="number"
+              value={impuestosImportacion}
+              onChange={(e) => setImpuestosImportacion(Number(e.target.value) || 0)}
+              className="border rounded p-1 w-24 text-right"
+            />
+          </div>
         </div>
+        <div className="flex justify-between items-center mb-2">
+          <label className="font-semibold">Envío:</label>
+          <div className="flex items-center">
+            <span className="mr-1">$</span>
+            <input
+              type="number"
+              value={envio}
+              onChange={(e) => setEnvio(Number(e.target.value) || 0)}
+              className="border rounded p-1 w-24 text-right"
+            />
+          </div>
+        </div>
+        <div className="flex justify-between items-center mb-2 font-semibold border-t pt-2">
+          <label>Total + Comisión + Impuestos:</label>
+          <span>${totalConComisionEImpuestos.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between items-center mb-2">
+          <label className="font-semibold">Abono:</label>
+          <div className="flex items-center">
+            <span className="mr-1">$</span>
+            <input
+              type="number"
+              value={abono}
+              onChange={(e) => setAbono(Number(e.target.value) || 0)}
+              className="border rounded p-1 w-24 text-right"
+            />
+          </div>
+        </div>
+        <div className="flex justify-between items-center font-bold border-t pt-2 mt-2">
+          <label>Total Final:</label>
+          <span>${totalFinal.toFixed(2)}</span>
+        </div>
+
+        <button
+          onClick={generarTicket}
+          className="mt-4 w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 flex items-center justify-center gap-2"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0v12h8V4H6z" clipRule="evenodd" />
+            <path fillRule="evenodd" d="M8 7a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+          </svg>
+          Generar Ticket para WhatsApp
+        </button>
       </div>
 
       <h3 className="text-lg mt-6 font-semibold">{editandoId ? 'Editar Pedido' : 'Agregar Pedido'}</h3>
