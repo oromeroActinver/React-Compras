@@ -7,7 +7,6 @@ function Login({ setToken, apiUrl }) {
   const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
 
-
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -15,10 +14,11 @@ function Login({ setToken, apiUrl }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${apiUrl}/auth/login`, form);  // Usa apiUrl
+      const res = await axios.post(`${apiUrl}/auth/login`, form);
       setToken(res.data.token);
     } catch (err) {
       console.error("Error de conexión:", err);
+      setError(err.response?.data?.message || 'Error al iniciar sesión'); // Usamos setError aquí
     }
   };
 
