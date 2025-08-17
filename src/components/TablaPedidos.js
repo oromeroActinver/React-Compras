@@ -19,17 +19,20 @@ const TablaPedidos = () => {
     tienda: '',
     descripcion: '',
     estado: '',
-    costo: 0,      // Cambiado de '' a 0
-    envio: 0,      // Cambiado de '' a 0
-    costo_compra: 0 // Cambiado de '' a 0
+    costo: 0,
+    envio: 0,
+    costo_compra: 0
   });
   const [editandoId, setEditandoId] = useState(null);
   const [comision, setComision] = useState(0);
-  const [impuestosImportacion, setImpuestosImportacion] = useState(0);
+  const [impuestosImportacionCliente, setImpuestosImportacionCliente] = useState(0);
+  const [impuestosImportacionProveedor, setImpuestosImportacionProveedor] = useState(0);
+
   const [abono, setAbono] = useState(0);
   const [descuentos, setDescuentos] = useState(0);
   const [envio] = useState(0);
   const [columnFilters, setColumnFilters] = useState([]);
+  const [historialGuardado, setHistorialGuardado] = useState([]);
   const apiUrl = process.env.REACT_APP_API_URL;
 
   const fetchPedidos = useCallback(async () => {
@@ -61,8 +64,8 @@ const TablaPedidos = () => {
       body: JSON.stringify({
         ...nuevoPedido,
         costo: parseFloat(nuevoPedido.costo) || 0,
-        envio: parseFloat(nuevoPedido.envio) || 0,  // Asegúrate de enviar este campo
-        costo_compra: parseFloat(nuevoPedido.costo_compra) || 0  // Asegúrate de enviar este campo
+        envio: parseFloat(nuevoPedido.envio) || 0,
+        costo_compra: parseFloat(nuevoPedido.costo_compra) || 0
       }),
     });
     setNuevoPedido({
@@ -131,7 +134,7 @@ const TablaPedidos = () => {
       cell: ({ getValue }) => `$${parseFloat(getValue() || 0).toFixed(2)}`
     },
     {
-      accessorKey: 'costo_compra',  // Cambiado de 'costoCompra' a 'costo_compra'
+      accessorKey: 'costo_compra',
       header: 'Costo de Compra',
       cell: ({ getValue }) => `$${parseFloat(getValue() || 0).toFixed(2)}`
     },
@@ -163,8 +166,6 @@ const TablaPedidos = () => {
   });
 
   const filteredRows = table.getRowModel().rows;
-
-
   const totalCostoFiltrado = useMemo(() => {
     return filteredRows.reduce((sum, row) => sum + (Number(row.original.costo) || 0), 0);
   }, [filteredRows]);
@@ -173,18 +174,71 @@ const TablaPedidos = () => {
     return filteredRows.reduce((sum, row) => sum + (Number(row.original.envio) || 0), 0);
   }, [filteredRows]);
 
+  const totalCostoCompra = useMemo(() => {
+    return filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0);
+  }, [filteredRows]);
 
   const totalConComisionEImpuestos = useMemo(() => {
     return totalCostoFiltrado +
       (Number(comision) || 0) +
-      (Number(impuestosImportacion) || 0) +
+      (Number(impuestosImportacionCliente) || 0) +
       totalEnvios +
-      (Number(envio) || 0); // Envío adicional manual
-  }, [totalCostoFiltrado, comision, impuestosImportacion, totalEnvios, envio]);
+      (Number(envio) || 0);
+  }, [totalCostoFiltrado, comision, impuestosImportacionCliente, totalEnvios, envio]);
+
+  const totalConCostosProveedor = useMemo(() => {
+    return totalCostoCompra +
+      (Number(impuestosImportacionProveedor) || 0) +
+      totalEnvios;
+  }, [totalCostoCompra, impuestosImportacionProveedor, totalEnvios]);
 
   const totalFinal = useMemo(() => {
-    return totalConComisionEImpuestos - (Number(abono) || 0);
-  }, [totalConComisionEImpuestos, abono]);
+    return totalConComisionEImpuestos - (Number(abono) || 0) -
+      (Number(descuentos) || 0);
+  }, [totalConComisionEImpuestos, abono, descuentos]);
+
+  const guardarResumen = async () => {
+    const resumen = {
+      fecha: new Date().toISOString(),
+      totalVentas: totalConComisionEImpuestos,
+      totalCostos: totalConCostosProveedor,
+      ganancia: totalFinal - totalConCostosProveedor,
+      comision,
+      impuestosCliente: impuestosImportacionCliente,
+      impuestosProveedor: impuestosImportacionProveedor,
+      abono,
+      descuentos,
+      detalles: filteredRows.map(row => ({
+        pedido: row.original.pedido,
+        cliente: row.original.cliente,
+        venta: Number(row.original.costo) || 0,       // venta del detalle
+        costo: Number(row.original.costo_compra) || 0, // costo del detalle
+        envio: Number(row.original.envio) || 0       // envío del detalle
+      }))
+    };
+
+    try {
+      // Guardar en la API
+      const response = await fetch(`${apiUrl}/resumenes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(resumen)
+      });
+
+      if (response.ok) {
+        alert("Resumen guardado correctamente");
+        // Actualizar el historial local con el resumen recién guardado
+        setHistorialGuardado(prev => [...prev, resumen]);
+      } else {
+        const errorData = await response.json();
+        console.error("Error guardando resumen:", errorData);
+        alert("No se pudo guardar el resumen. Revisa la consola.");
+      }
+    } catch (error) {
+      console.error("Error al guardar:", error);
+      alert("Ocurrió un error al guardar el resumen.");
+    }
+  };
 
   const generarTicket = () => {
     const fecha = new Date().toLocaleDateString();
@@ -205,19 +259,12 @@ ${filteredRows.map((row, index) =>
 *💰 TOTALES:*
 ➖ Subtotal: $${totalCostoFiltrado.toFixed(2)}
 ➕ Comisión: $${comision.toFixed(2)}
-➕ Impuestos: $${impuestosImportacion.toFixed(2)}
+➕ Impuestos: $${impuestosImportacionCliente.toFixed(2)}
 ${totalEnvios > 0 ? `➕ Total Envíos: $${totalEnvios.toFixed(2)}` : '➕ Envío: GRATIS'}
 ➖ Abono: $${abono.toFixed(2)}
+➖ Descuentos y Cupones: $${(descuentos || 0).toFixed(2)}
 ━━━━━━━━━━━━━━━━━━
 💵 *TOTAL FINAL: $${totalFinal.toFixed(2)}*
-
-*📲 Datos de contacto:*
-📧 Email: 
-  romeromaciasorlando@gmail.com
-  nayegonza0130@gmail.com
-📞 Teléfono: 
-  +56 3878 3228
-  +241 279 0692
 
 Mi cuenta BBVA: 
 Cuenta CLABE: 012 180 01523123878 0
@@ -234,213 +281,212 @@ Cuenta CLABE: 012 180 01523123878 0
     <div className="p-4">
       <h2 className="text-2xl font-bold mb-4">Pedidos</h2>
 
-      <input
-        type="text"
-        value={globalFilter}
-        onChange={(e) => setGlobalFilter(e.target.value)}
-        placeholder="Buscar en la tabla..."
-        className="mb-4 p-2 border rounded w-full"
-      />
+      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+        <h3 className="text-lg mt-2 font-semibold text-blue-800">
+          {editandoId ? 'Editar Pedido' : 'Agregar Pedido'}
+        </h3>
 
-      <table className="min-w-full border-collapse border border-gray-300 rounded-lg shadow-lg text-sm">
-        <thead className="bg-gray-200 text-gray-700 font-semibold">
-          {table.getHeaderGroups().map((headerGroup) => (
-            <React.Fragment key={headerGroup.id}>
-              <tr>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="px-4 py-2 border text-left cursor-pointer hover:bg-gray-300 transition"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                    {header.column.getIsSorted() === 'asc' && ' 🔼'}
-                    {header.column.getIsSorted() === 'desc' && ' 🔽'}
-                  </th>
-                ))}
-              </tr>
-
-              <tr>
-                {headerGroup.headers.map((header) => {
-                  const columnId = header.column.id;
-                  const canFilter = ['pedido', 'cliente', 'tienda', 'estado'].includes(columnId);
-
-                  return (
-                    <th key={header.id} className="px-2 py-1 border">
-                      {canFilter ? (
-                        <input
-                          type="text"
-                          value={header.column.getFilterValue() ?? ''}
-                          onChange={(e) => header.column.setFilterValue(e.target.value)}
-                          placeholder={`Filtrar...`}
-                          className="w-full px-1 py-1 text-sm border rounded"
-                        />
-                      ) : null}
-                    </th>
-                  );
-                })}
-              </tr>
-            </React.Fragment>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+          {['pedido', 'cliente', 'tienda', 'descripcion', 'estado'].map((campo) => (
+            <input
+              key={campo}
+              name={campo}
+              value={nuevoPedido[campo] || ''}
+              onChange={handleChange}
+              placeholder={campo.charAt(0).toUpperCase() + campo.slice(1)}
+              className="p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           ))}
-        </thead>
 
-        <tbody className="text-gray-700">
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="hover:bg-gray-50">
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="px-4 py-2 border">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          <input
+            name="costo"
+            type="number"
+            step="0.01"
+            value={nuevoPedido.costo || ''}
+            onChange={handleChange}
+            placeholder="Costo"
+            className="p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
 
-      <div className="mt-4 flex justify-between items-center">
-        <div>
-          Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount()}
+          <input
+            name="envio"
+            type="number"
+            step="0.01"
+            value={nuevoPedido.envio || ''}
+            onChange={handleChange}
+            placeholder="Envío"
+            className="p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+
+          <input
+            name="costo_compra"
+            type="number"
+            step="0.01"
+            value={nuevoPedido.costo_compra || ''}
+            onChange={handleChange}
+            placeholder="Costo de Compra"
+            className="p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex justify-end">
           <button
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-            className="px-3 py-1 bg-gray-200 rounded"
+            onClick={editandoId ? handleActualizar : handleAgregar}
+            className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition duration-200"
           >
-            Anterior
-          </button>
-          <button
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-            className="px-3 py-1 bg-gray-200 rounded"
-          >
-            Siguiente
+            {editandoId ? 'Actualizar' : 'Agregar'}
           </button>
         </div>
       </div>
 
 
-      <div className="flex flex-wrap gap-4 mt-4 w-full">
-        {/* Resumen original (izquierda) */}
-        <div className="p-4 bg-gray-100 rounded shadow-md w-80 flex-shrink-0">
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Subtotal:</label>
-            <span>${totalCostoFiltrado.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Comisión:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <input
-                type="number"
-                value={comision}
-                onChange={(e) => setComision(Number(e.target.value) || 0)}
-                className="border rounded p-1 w-24 text-right"
-              />
-            </div>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Impuestos de importación:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <input
-                type="number"
-                value={impuestosImportacion}
-                onChange={(e) => setImpuestosImportacion(Number(e.target.value) || 0)}
-                className="border rounded p-1 w-24 text-right"
-              />
-            </div>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Total Envíos:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <span className="border rounded p-1 w-24 text-right bg-white">
-                {totalEnvios.toFixed(2)}
-              </span>
-            </div>
-          </div>
-          <div className="flex justify-between items-center mb-2 font-semibold border-t pt-2">
-            <label>Total + Comisión + Impuestos:</label>
-            <span>${totalConComisionEImpuestos.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Abono:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <input
-                type="number"
-                value={abono}
-                onChange={(e) => setAbono(Number(e.target.value) || 0)}
-                className="border rounded p-1 w-24 text-right"
-              />
-            </div>
-          </div>
-          <div className="flex justify-between items-center font-bold border-t pt-2 mt-2">
-            <label>Total Final:</label>
-            <span>${totalFinal.toFixed(2)}</span>
+      {/* Reemplaza la sección actual de la tabla principal con esto: */}
+
+      <div className="mb-8">
+        <input
+          type="text"
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Buscar en la tabla..."
+          className="mb-4 p-2 border rounded w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+
+        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-blue-600 text-white">
+                  {table.getHeaderGroups()[0].headers.map(header => (
+                    <th
+                      key={header.id}
+                      className="p-3 border border-blue-700 text-left cursor-pointer hover:bg-blue-700"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      <div className="flex items-center justify-between">
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {{
+                          asc: ' 🔼',
+                          desc: ' 🔽',
+                        }[header.column.getIsSorted()] ?? null}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+                <tr className="bg-blue-500 text-white">
+                  {table.getHeaderGroups()[0].headers.map(header => {
+                    const columnId = header.column.id;
+                    const canFilter = ['pedido', 'cliente', 'tienda', 'estado'].includes(columnId);
+
+                    return (
+                      <th key={header.id} className="p-2 border border-blue-600">
+                        {canFilter && (
+                          <input
+                            type="text"
+                            value={header.column.getFilterValue() ?? ''}
+                            onChange={(e) => header.column.setFilterValue(e.target.value)}
+                            placeholder={`Filtrar ${header.column.columnDef.header}`}
+                            className="w-full px-2 py-1 text-sm border rounded bg-blue-50 text-blue-900"
+                          />
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="max-h-96 overflow-y-auto">
+                {table.getRowModel().rows.map(row => (
+                  <tr key={row.id} className="hover:bg-blue-50 even:bg-gray-50">
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id} className="p-3 border border-gray-200">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
+      </div>
 
-        {/* Resumen centro (costo compra) */}
-        <div className="p-4 bg-gray-100 rounded shadow-md w-80 flex-shrink-0">
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Subtotal (Costo Compra):</label>
-            <span>${filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Impuestos de importación:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <input
-                type="number"
-                value={impuestosImportacion}
-                onChange={(e) => setImpuestosImportacion(Number(e.target.value) || 0)}
-                className="border rounded p-1 w-24 text-right"
-              />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        {/* Resumen original (izquierda) */}
+        <div className="p-4 bg-blue-50 rounded shadow-md border border-blue-100">
+          <h3 className="font-bold text-lg mb-3 text-blue-800">Resumen Cliente</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Subtotal:</label>
+              <span>${totalCostoFiltrado.toFixed(2)}</span>
             </div>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Total Envíos:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <span className="border rounded p-1 w-24 text-right bg-white">
-                {totalEnvios.toFixed(2)}
-              </span>
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Comisión:</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <input
+                  type="number"
+                  value={comision}
+                  onChange={(e) => setComision(Number(e.target.value) || 0)}
+                  className="border rounded p-1 w-24 text-right focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="font-semibold">Descuentos y Cupones:</label>
-            <div className="flex items-center">
-              <span className="mr-1">$</span>
-              <input
-                type="number"
-                value={descuentos}
-                onChange={(e) => setDescuentos(Number(e.target.value) || 0)}
-                className="border rounded p-1 w-24 text-right"
-              />
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Impuestos de importación (Cliente):</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <input
+                  type="number"
+                  value={impuestosImportacionCliente}
+                  onChange={(e) => setImpuestosImportacionCliente(Number(e.target.value) || 0)}
+                  className="border rounded p-1 w-24 text-right focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
-          </div>
-          <div className="flex justify-between items-center font-bold border-t pt-2 mt-2">
-            <label>Total Final:</label>
-            <span>${(filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0) +
-              (Number(impuestosImportacion) || 0) +
-              totalEnvios -
-              (Number(descuentos) || 0)).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between items-center font-bold border-t pt-2 mt-2 text-green-600">
-            <label>Ganancia:</label>
-            <span>
-              ${(totalFinal -
-                (filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0)) +
-                (Number(impuestosImportacion) || 0) +
-                totalEnvios -
-                (Number(descuentos) || 0)).toFixed(2)}
-            </span>
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Total Envíos:</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <span className="border rounded p-1 w-24 text-right bg-white">
+                  {totalEnvios.toFixed(2)}
+                </span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center font-semibold border-t pt-2 text-blue-800">
+              <label>Total + Comisión + Impuestos:</label>
+              <span>${totalConComisionEImpuestos.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Abono:</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <input
+                  type="number"
+                  value={abono}
+                  onChange={(e) => setAbono(Number(e.target.value) || 0)}
+                  className="border rounded p-1 w-24 text-right focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Descuentos y Cupones:</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <input
+                  type="number"
+                  value={descuentos}
+                  onChange={(e) => setDescuentos(Number(e.target.value) || 0)}
+                  className="border rounded p-1 w-24 text-right focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-between items-center font-bold border-t pt-2 mt-2 text-lg text-blue-800">
+              <label>Total Final (Cliente):</label>
+              <span>${totalFinal.toFixed(2)}</span>
+            </div>
           </div>
           <button
             onClick={generarTicket}
-            className="mt-4 w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 flex items-center justify-center gap-2"
+            className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition duration-200 flex items-center justify-center gap-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0v12h8V4H6z" clipRule="evenodd" />
@@ -450,143 +496,130 @@ Cuenta CLABE: 012 180 01523123878 0
           </button>
         </div>
 
-        {/* Nueva sección derecha (distribución impuestos) */}
-        <div className="p-4 bg-gray-100 rounded shadow-md flex-grow min-w-0">
-          <h3 className="font-bold text-lg mb-3">Distribución de Impuestos</h3>
-
-          <div className="mb-3 grid grid-cols-2 gap-4">
-            <div className="flex justify-between items-center p-2 bg-white rounded">
-              <label className="font-semibold">Total Impuestos:</label>
-              <span className="font-mono">${impuestosImportacion.toFixed(2)}</span>
+        {/* Resumen centro (costo compra) */}
+        <div className="p-4 bg-blue-50 rounded shadow-md border border-blue-100">
+          <h3 className="font-bold text-lg mb-3 text-blue-800">Resumen Proveedor</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Subtotal (Costo Compra):</label>
+              <span>${totalCostoCompra.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between items-center p-2 bg-white rounded">
-              <label className="font-semibold">Total Costo Compra:</label>
-              <span className="font-mono">${filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0).toFixed(2)}</span>
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Impuestos de importación (Proveedor):</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <input
+                  type="number"
+                  value={impuestosImportacionProveedor}
+                  onChange={(e) => setImpuestosImportacionProveedor(Number(e.target.value) || 0)}
+                  className="border rounded p-1 w-24 text-right focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Total Envíos:</label>
+              <span>${totalEnvios.toFixed(2)}</span>
+            </div>
+
+            <div className="flex justify-between items-center font-bold border-t pt-2 mt-2 text-blue-800">
+              <label>Total Final (Proveedor):</label>
+              <span>${totalConCostosProveedor.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center font-bold border-t pt-2 mt-2 text-lg text-green-600">
+              <label>Ganancia:</label>
+              <span>${(totalFinal - totalConCostosProveedor).toFixed(2)}</span>
+            </div>
+            <button
+              onClick={guardarResumen}
+              className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition duration-200"
+            >
+              Guardar Resumen
+            </button>
+          </div>
+        </div>
+
+
+      </div>
+
+      {/* Nueva sección derecha (distribución impuestos) */}
+      <div className="p-4 bg-blue-50 rounded shadow-md flex-1 min-w-0 border border-blue-100">
+        <h3 className="font-bold text-lg mb-3 text-blue-800">Distribución de Impuestos</h3>
+
+        <div className="mb-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex justify-between items-center p-2 bg-white rounded border border-blue-200">
+            <label className="font-semibold">Total Impuestos:</label>
+            <span className="font-mono">${impuestosImportacionProveedor.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-white rounded border border-blue-200">
+            <label className="font-semibold">Total Costo Compra:</label>
+            <span className="font-mono">${filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="max-h-96 overflow-y-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-blue-600 text-white sticky top-0">
+                <th className="p-3 border border-blue-700 text-left w-2/5">Producto</th>
+                <th className="p-3 border border-blue-700 text-right">Costo</th>
+                <th className="p-3 border border-blue-700 text-right">%</th>
+                <th className="p-3 border border-blue-700 text-right">Impuesto</th>
+                <th className="p-3 border border-blue-700 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => {
+                const costo = Number(row.original.costo_compra) || 0;
+                const totalCompra = filteredRows.reduce((sum, r) => sum + (Number(r.original.costo_compra) || 0), 0);
+                const porcentaje = totalCompra > 0 ? (costo / totalCompra) * 100 : 0;
+                const impuestoAsignado = (porcentaje / 100) * (Number(impuestosImportacionProveedor) || 0);
+
+                return (
+                  <tr key={row.id} className="hover:bg-blue-50 even:bg-gray-50">
+                    <td className="p-3 border border-gray-200 text-left truncate max-w-xs" title={row.original.descripcion}>
+                      {row.original.descripcion || 'Sin nombre'}
+                    </td>
+                    <td className="p-3 border border-gray-200 text-right font-mono">${costo.toFixed(2)}</td>
+                    <td className="p-3 border border-gray-200 text-right font-mono">{porcentaje.toFixed(2)}%</td>
+                    <td className="p-3 border border-gray-200 text-right font-mono">${impuestoAsignado.toFixed(2)}</td>
+                    <td className="p-3 border border-gray-200 text-right font-mono">${(costo + impuestoAsignado).toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-3 pt-2 border-t border-blue-200 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white p-3 rounded border border-blue-200">
+            <div className="flex justify-between font-semibold">
+              <span>Total asignado:</span>
+              <span className="font-mono">${filteredRows.reduce((sum, row) => {
+                const costo = Number(row.original.costo_compra) || 0;
+                const totalCompra = filteredRows.reduce((s, r) => s + (Number(r.original.costo_compra) || 0), 0);
+                const porcentaje = totalCompra > 0 ? (costo / totalCompra) : 0;
+                return sum + (porcentaje * (Number(impuestosImportacionProveedor) || 0));
+              }, 0).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600 mt-1">
+              <span>Diferencia:</span>
+              <span className="font-mono">${(impuestosImportacionProveedor - filteredRows.reduce((sum, row) => {
+                const costo = Number(row.original.costo_compra) || 0;
+                const totalCompra = filteredRows.reduce((s, r) => s + (Number(r.original.costo_compra) || 0), 0);
+                const porcentaje = totalCompra > 0 ? (costo / totalCompra) : 0;
+                return sum + (porcentaje * (Number(impuestosImportacionProveedor) || 0));
+              }, 0)).toFixed(2)}</span>
             </div>
           </div>
 
-          <div className="max-h-96 overflow-y-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-200 sticky top-0">
-                  <th className="p-3 border text-left w-2/5">Producto</th>
-                  <th className="p-3 border text-right">Costo</th>
-                  <th className="p-3 border text-right">%</th>
-                  <th className="p-3 border text-right">Impuesto</th>
-                  <th className="p-3 border text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((row) => {
-                  const costo = Number(row.original.costo_compra) || 0;
-                  const totalCompra = filteredRows.reduce((sum, r) => sum + (Number(r.original.costo_compra) || 0), 0);
-                  const porcentaje = totalCompra > 0 ? (costo / totalCompra) * 100 : 0;
-                  const impuestoAsignado = (porcentaje / 100) * (Number(impuestosImportacion) || 0);
-
-                  return (
-                    <tr key={row.id} className="hover:bg-gray-50 even:bg-gray-50">
-                      <td className="p-3 border text-left truncate max-w-xs" title={row.original.descripcion}>
-                        {row.original.descripcion || 'Sin nombre'}
-                      </td>
-                      <td className="p-3 border text-right font-mono">${costo.toFixed(2)}</td>
-                      <td className="p-3 border text-right font-mono">{porcentaje.toFixed(2)}%</td>
-                      <td className="p-3 border text-right font-mono">${impuestoAsignado.toFixed(2)}</td>
-                      <td className="p-3 border text-right font-mono">${(costo + impuestoAsignado).toFixed(2)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-3 pt-2 border-t border-gray-300 grid grid-cols-2 gap-4">
-            <div className="bg-white p-3 rounded">
-              <div className="flex justify-between font-semibold">
-                <span>Total asignado:</span>
-                <span className="font-mono">${filteredRows.reduce((sum, row) => {
-                  const costo = Number(row.original.costo_compra) || 0;
-                  const totalCompra = filteredRows.reduce((s, r) => s + (Number(r.original.costo_compra) || 0), 0);
-                  const porcentaje = totalCompra > 0 ? (costo / totalCompra) : 0;
-                  return sum + (porcentaje * (Number(impuestosImportacion) || 0));
-                }, 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm text-gray-600 mt-1">
-                <span>Diferencia:</span>
-                <span className="font-mono">${(impuestosImportacion - filteredRows.reduce((sum, row) => {
-                  const costo = Number(row.original.costo_compra) || 0;
-                  const totalCompra = filteredRows.reduce((s, r) => s + (Number(r.original.costo_compra) || 0), 0);
-                  const porcentaje = totalCompra > 0 ? (costo / totalCompra) : 0;
-                  return sum + (porcentaje * (Number(impuestosImportacion) || 0));
-                }, 0)).toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div className="bg-white p-3 rounded">
-              <div className="flex justify-between font-semibold">
-                <span>Total Costo + Impuestos:</span>
-                <span className="font-mono">${(filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0) + (Number(impuestosImportacion) || 0)).toFixed(2)}</span>
-              </div>
+          <div className="bg-white p-3 rounded border border-blue-200">
+            <div className="flex justify-between font-semibold">
+              <span>Total Costo + Impuestos:</span>
+              <span className="font-mono">${(filteredRows.reduce((sum, row) => sum + (Number(row.original.costo_compra) || 0), 0) + (Number(impuestosImportacionProveedor) || 0)).toFixed(2)}</span>
             </div>
           </div>
         </div>
       </div>
-
-      <h3 className="text-lg mt-6 font-semibold">
-        {editandoId ? 'Editar Pedido' : 'Agregar Pedido'}
-      </h3>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2">
-        {['pedido', 'cliente', 'tienda', 'descripcion', 'estado'].map((campo) => (
-          <input
-            key={campo}
-            name={campo}
-            value={nuevoPedido[campo] || ''}
-            onChange={handleChange}
-            placeholder={campo.charAt(0).toUpperCase() + campo.slice(1)}
-            className="p-2 border rounded"
-          />
-        ))}
-
-        {/* Campos numéricos */}
-        <input
-          name="costo"
-          type="number"
-          step="0.01"
-          value={nuevoPedido.costo || ''}
-          onChange={handleChange}
-          placeholder="Costo"
-          className="p-2 border rounded"
-        />
-
-        <input
-          name="envio"
-          type="number"
-          step="0.01"
-          value={nuevoPedido.envio}
-          onChange={handleChange}
-          placeholder="Envío"
-          className="p-2 border rounded"
-        />
-
-        <input
-          name="costo_compra"
-          type="number"
-          step="0.01"
-          value={nuevoPedido.costo_compra}
-          onChange={handleChange}
-          placeholder="Costo de Compra"
-          className="p-2 border rounded"
-        />
-
-
-      </div>
-
-      <button
-        onClick={editandoId ? handleActualizar : handleAgregar}
-        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-      >
-        {editandoId ? 'Actualizar' : 'Agregar'}
-      </button>
     </div>
   );
 };
