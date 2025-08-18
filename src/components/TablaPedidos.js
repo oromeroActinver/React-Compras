@@ -29,6 +29,7 @@ const TablaPedidos = () => {
   const [impuestosImportacionProveedor, setImpuestosImportacionProveedor] = useState(0);
   const [abono, setAbono] = useState(0);
   const [descuentos, setDescuentos] = useState(0);
+  const [descuentosProveedor, setDescuentosProveedor] = useState(0);
   const [envio] = useState(0);
   const [columnFilters, setColumnFilters] = useState([]);
   const [historialGuardado, setHistorialGuardado] = useState([]);
@@ -188,8 +189,10 @@ const TablaPedidos = () => {
   const totalConCostosProveedor = useMemo(() => {
     return totalCostoCompra +
       (Number(impuestosImportacionProveedor) || 0) +
-      totalEnvios;
-  }, [totalCostoCompra, impuestosImportacionProveedor, totalEnvios]);
+      totalEnvios -
+      (Number(descuentosProveedor) || 0);
+  }, [totalCostoCompra, impuestosImportacionProveedor, totalEnvios, descuentosProveedor]);
+
 
   const totalFinal = useMemo(() => {
     return totalConComisionEImpuestos - (Number(abono) || 0) -
@@ -519,6 +522,19 @@ Cuenta CLABE: 012 180 01523123878 0
             <div className="flex justify-between items-center">
               <label className="font-semibold">Total Envíos:</label>
               <span>${totalEnvios.toFixed(2)}</span>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <label className="font-semibold">Descuentos y Cupones Proveedor:</label>
+              <div className="flex items-center">
+                <span className="mr-1">$</span>
+                <input
+                  type="number"
+                  value={descuentosProveedor}
+                  onChange={(e) => setDescuentosProveedor(Number(e.target.value) || 0)}
+                  className="border rounded p-1 w-24 text-right focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
 
             <div className="flex justify-between items-center font-bold border-t pt-2 mt-2 text-blue-800">
