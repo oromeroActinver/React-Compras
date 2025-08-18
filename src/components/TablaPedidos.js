@@ -27,6 +27,7 @@ const TablaPedidos = () => {
   const [comision, setComision] = useState(0);
   const [impuestosImportacionCliente, setImpuestosImportacionCliente] = useState(0);
   const [impuestosImportacionProveedor, setImpuestosImportacionProveedor] = useState(0);
+
   const [abono, setAbono] = useState(0);
   const [descuentos, setDescuentos] = useState(0);
   const [descuentosProveedor, setDescuentosProveedor] = useState(0);
@@ -80,6 +81,7 @@ const TablaPedidos = () => {
     });
     fetchPedidos();
   };
+
 
   const handleEliminar = useCallback(async (id) => {
     await fetch(`${apiUrl}/pedidos/${id}`, { method: 'DELETE' });
@@ -165,7 +167,6 @@ const TablaPedidos = () => {
   });
 
   const filteredRows = table.getRowModel().rows;
-
   const totalCostoFiltrado = useMemo(() => {
     return filteredRows.reduce((sum, row) => sum + (Number(row.original.costo) || 0), 0);
   }, [filteredRows]);
@@ -241,7 +242,6 @@ const TablaPedidos = () => {
       alert("Ocurrió un error al guardar el resumen.");
     }
   };
-
 
   const generarTicket = () => {
     const fecha = new Date().toLocaleDateString();
@@ -636,8 +636,6 @@ Cuenta CLABE: 012 180 01523123878 0
           </div>
         </div>
       </div>
-
-
     </div>
   );
 };
